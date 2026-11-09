@@ -1,0 +1,7 @@
+build/
+.gradle/
+local.properties
+*.apk
+sf/
+app/src/main/jniLibs/
+.idea/
