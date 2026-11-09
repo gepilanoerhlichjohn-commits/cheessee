@@ -108,6 +108,37 @@ public final class ScreenReader {
         r[2] += (int) Math.round(ss / cnt) - range;
     }
 
+    /**
+     * Nudges a rough {x, y, size} (e.g. a frame dragged by hand) onto the real board. Our own overlay {@code ov}
+     * (straight ARGB, may be null) is undone first so its lines do not disturb the search.
+     */
+    public static int[] snap(int[] px, int[] ov, int w, int h, int x, int y, int size) {
+        int[] clean = px;
+        if (ov != null) {
+            clean = px.clone();
+            for (int i = 0; i < px.length; i++) {
+                int a = ov[i] >>> 24;
+                if (a < 3 || a > 235) continue;
+                double af = a / 255.0, k = 1 - af;
+                int p = px[i], o = ov[i];
+                int r = (int) clamp(((p >> 16 & 255) - (o >> 16 & 255) * af) / k);
+                int g = (int) clamp(((p >> 8 & 255) - (o >> 8 & 255) * af) / k);
+                int b = (int) clamp(((p & 255) - (o & 255) * af) / k);
+                clean[i] = 0xFF000000 | r << 16 | g << 8 | b;
+            }
+        }
+        int[] r = clampFrame(x, y, size, w, h);
+        for (int pass = 0; pass < 3; pass++) refine(clean, w, h, r, 12, 0.05);
+        refine(clean, w, h, r, 3, 0.03);
+        return r;
+    }
+
+    /** Keeps a frame inside the screen instead of rejecting it. */
+    public static int[] clampFrame(int x, int y, int size, int w, int h) {
+        int s = Math.max(100, Math.min(size, Math.min(w, h)));
+        return new int[]{Math.max(0, Math.min(x, w - s)), Math.max(0, Math.min(y, h - s)), s};
+    }
+
     /** Scans tops from y0..y1 and returns the middle of the band of best-scoring positions. */
     private static int plateauY(int[] px, int w, int h, int x, int size, int y0, int y1, int step) {
         if (y1 < y0 || x < 0 || x + size > w) return -1;

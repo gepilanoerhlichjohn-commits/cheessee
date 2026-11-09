@@ -487,6 +487,8 @@ class CheesseeService : Service() {
         if (y >= 0 && abs(y - p.boardY) > 2) p.boardY = y
     }
 
+    private var autoFrame: IntArray? = null
+
     private fun doCalibStart(frame: ScreenGrabber.Frame, p: Prefs) {
         val saved = if (p.boardSize > 0) intArrayOf(p.boardX, p.boardY, p.boardSize) else null
         val found = try {
@@ -498,6 +500,7 @@ class CheesseeService : Service() {
             toast("Couldn't find the board. Open Lichess so the whole board is visible and try again.")
             return
         }
+        autoFrame = found.clone()
         main.post {
             val ov = overlay ?: return@post
             ov.bx = found[0].toFloat()
@@ -518,19 +521,34 @@ class CheesseeService : Service() {
         val y = ov.by.roundToInt()
         val s = ov.size.roundToInt()
         val snap = overlaySnapshot()
-        val t = try {
-            if (x < 0 || y < 0 || x + s > frame.w || y + s > frame.h) null
-            else ScreenReader.learn(frame.px, snap, frame.w, x, y, s)
+        // Try the frame snapped onto the real board first, then as dragged, then the one found automatically.
+        var t: ScreenReader.Templates? = null
+        var used = intArrayOf(x, y, s)
+        val tries = ArrayList<IntArray>()
+        try {
+            tries.add(ScreenReader.snap(frame.px, snap, frame.w, frame.h, x, y, s))
         } catch (e: Exception) {
-            null
+        }
+        tries.add(ScreenReader.clampFrame(x, y, s, frame.w, frame.h))
+        autoFrame?.let { tries.add(ScreenReader.clampFrame(it[0], it[1], it[2], frame.w, frame.h)) }
+        for (c in tries) {
+            t = try {
+                ScreenReader.learn(frame.px, snap, frame.w, c[0], c[1], c[2])
+            } catch (e: Exception) {
+                null
+            }
+            if (t != null) {
+                used = c
+                break
+            }
         }
         if (t == null) {
             toast("Couldn't see all 32 starting pieces inside the frame. Open a NEW game or analysis board (nothing moved yet), fit the frame exactly on the board and tap ✓ again.")
             return
         }
-        p.boardX = x
-        p.boardY = y
-        p.boardSize = s
+        p.boardX = used[0]
+        p.boardY = used[1]
+        p.boardSize = used[2]
         p.templates = t.encode()
         templates = t
         coach.reset()
